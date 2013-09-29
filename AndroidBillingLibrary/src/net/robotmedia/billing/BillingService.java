@@ -236,10 +236,9 @@ public class BillingService extends Service implements ServiceConnection {
 
 	private void runPendingRequests() {
 		BillingRequest request;
-		int maxStartId = -1;		
+		int maxStartId = -1;
 		while ((request = mPendingRequests.peek()) != null) {
-			if (mService != null) {
-				runRequest(request);
+			if (runIfConnected(request)) {
 				mPendingRequests.remove();
 				if (maxStartId < request.getStartId()) {
 					maxStartId = request.getStartId();
@@ -254,14 +253,32 @@ public class BillingService extends Service implements ServiceConnection {
 		}
 	}
 
-	private void runRequest(BillingRequest request) {
+	/**
+	 * Called when a remote exception occurs while trying to execute the
+	 * {@link BillingRequest#run(IMarketBillingService)} method.
+	 * @param e the exception
+	 */
+	protected void onRemoteException(RemoteException e) {
+		Log.w(this.getClass().getSimpleName(), "Remote billing service crashed "+e);
+		mService = null;
+	}
+
+	/**
+	 * Runs the given billing request if the service is already connected.
+	 * @param request the billing request
+	 * @return true if the request ran successfully; false if the service
+	 * is not connected or there was an error when trying to use it
+	 */
+	private boolean runIfConnected(BillingRequest request) {
+		if (mService == null) return false;
 		try {
 			final long requestId = request.run(mService);
 			BillingController.onRequestSent(requestId, request);
+			return true;
 		} catch (RemoteException e) {
-			Log.w(this.getClass().getSimpleName(), "Remote billing service crashed");
-			// TODO: Retry?
+			onRemoteException(e);
 		}
+		return false;
 	}
 
 	private void runRequestOrQueue(BillingRequest request) {
